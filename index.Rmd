@@ -1,0 +1,142 @@
+---
+title: "Weight Lifting Exercise Analysis"
+output: html_document
+---
+
+## Executive Summary
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. 
+
+One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it.
+
+The goal of this project is to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. 
+
+More information is available from the website here: <http://groupware.les.inf.puc-rio.br/har> (see the section on the Weight Lifting Exercise Dataset). 
+
+The goal of this project is to predict the "classe" variable in the training set.
+
+## Data Processing
+
+The training data for this project are available here: 
+
+<https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv>
+
+The test data are available here: 
+
+<https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv>
+
+Loading the required libraries and reading in the training and testing datasets.
+
+```{r}
+library(caret)
+input <- read.csv("pml-training.csv", header = TRUE, na.strings = c('', 'NA'))
+input_test <- read.csv("pml-testing.csv", header = TRUE, na.strings = c('', 'NA'))
+```
+
+The original datasets contain columns without data. Applying appropriate logical variable I filtered out those columns that are missing values.
+
+```{r echo = FALSE}
+column_sums <- colSums(is.na(input))
+column_sums_log <- (column_sums == 0)
+input_test <- input_test[, (colSums(is.na(input_test)) == 0)]
+```
+
+```{r}
+train_less_columns <- input[, column_sums_log]
+```
+
+Creating logical vector in order to delete unnecessary columns from the cleaned training and testing datasets.
+
+```{r}
+delete_columns <- grepl("X|timestamp|new_window|user_name", 
+                      colnames(train_less_columns))
+input_test_final <- input_test[, !delete_columns]
+train_less_columns <- train_less_columns[, !delete_columns]
+```
+
+
+I have splitted the updated training dataset into a smaller training dataset (70% of the observations from the original training set) and a smaller validation dataset (30% of the observations from the original training set).
+
+This validation dataset will be used to perform cross validation and to be able to test the model accuracy.
+
+```{r}
+inTrain = createDataPartition(y = train_less_columns$classe, p = 0.7, list = FALSE)
+small_train_set = train_less_columns[inTrain, ]
+small_validation = train_less_columns[-inTrain, ]
+```
+
+## Machine Learning
+
+The training dataset (small_train_set) contains 54 variables, and the last column is the 'classe' variable , which the machine learning model will be predicting.
+
+After pre-processing, the function 'predict' is used for pre-processing of
+both the training and validation subsets.
+
+```{r echo = FALSE}
+preProc <- preProcess(small_train_set[, -54], method = "pca", thresh = 0.99)
+train.pca <- predict(preProc, small_train_set[, -54])
+```
+
+```{r}
+valid_test.pca <- predict(preProc, small_validation[, -54])
+```
+
+The machine learning model is trained using a random forest method on the smaller training dataset. Applying the  random forest routine, in the 'trainControl()' parameter the use of a cross validation method is specified.
+
+```{r echo = FALSE}
+fit <- train(small_train_set$classe ~ ., method = "rf", data = train.pca, trControl = trainControl(method = "cv", number = 4), importance = TRUE)                                                                                         
+```
+
+The relative importance of the resulting principal components of the trained model, 'fit' can be reviewed now.
+
+```{r}
+varImpPlot(fit$finalModel, sort = TRUE, pch = 19, type = 1, col = 1, cex = 1, 
+           main = "Importance of Components")
+```
+
+## Cross Validation Testing
+
+The 'predict' function is used so that the model can be applied to the cross validation testing dataset. 
+
+The resulting table of the output of 'confusionMatrix' function indicates how the model predicted/classified the values in the validation test set 
+
+```{r echo = FALSE}
+predict_validation_rf <- predict(fit, valid_test.pca)
+```
+
+```{r}
+confus <- confusionMatrix(small_validation$classe, predict_validation_rf)
+confus$table
+```
+
+The estimated out-of-sample error and the model's accuracy, can be estimated using the 'postresample' function.
+
+```{r echo = FALSE}
+accuracy <- postResample(small_validation$classe, predict_validation_rf)
+model_acc <- accuracy[[1]]
+```
+
+```{r}
+model_acc
+out_of_sample_error <- 1 - model_acc
+out_of_sample_error
+```
+
+The estimated accuracy of the model is `r round(model_acc *100 , 2)`% and the estimated out-of-sample error based on fitted model and the cross validation dataset is `r round(out_of_sample_error *100 , 2)`%.
+
+## Predicted Results
+
+After pre-processing the original testing dataset, after removing the
+extraneous column labeled 'problem_id' (column 54), the model can be run against the testing dataset to obtain the predicted results.
+
+```{r echo = FALSE}
+test.pca <- predict(preProc, input_test_final[, -54])
+```
+
+```{r}
+predict_final <- predict(fit, test.pca)
+#predict_final
+```
+
+
+
